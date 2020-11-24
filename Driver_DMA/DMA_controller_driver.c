@@ -20,6 +20,7 @@ MODULE_LICENSE("GPL");
 #include <linux/platform_device.h>
 #include <sys/ioctl.h>
 #include <linux/mm.h>
+#include <linux/highmem.h>
 
 
 // Définition des commandes IOCTL
@@ -91,21 +92,25 @@ static ssize_t simple_user_read(struct file *f, char __user *udata, size_t size,
   struct kdata *kdata;
   unsigned long nr_pages, addr;
   addr = (unsigned long) udata;
-  addr &= ~(PAGE_SIZE - 1);
-  nr_pages = DIV_ROUND_UP(size, PAGE_SIZE);
+  addr &= ~(PAGE_SIZE - 1); // Définir PAGE_SIZE - 1 , Ajout à udata  ~(PAGE_SIZE - 1)
+  nr_pages = DIV_ROUND_UP(size, PAGE_SIZE); // <-> (((size) + (PAGE_SIZE) - 1) / (size))
   kdata = f->private_data;
-  ret = get_user_pages_fast(addr, nr_pages, FOLL_WRITE, kdata->addr);
+  ret = get_user_pages_fast(addr, nr_pages, FOLL_WRITE, kdata->addr); //retourne le nbre de page utilisateur épingler en mémoire
   if(ret < 0){
     dev_err(&kdata->dev, "Unable to get user page\n");
     return ret;
   }
   nr_pages = ret;
   kdata->size = nr_pages * PAGE_SIZE;
-  kmap(kdata->addr)
+  kmap(kdata->addr) // Créer un espace mémoire virtuel pour une page
+  /*###########################*/
+
   //do something with kdata
-  kunmap(kdata->addr);
-  put_page(kdata->addr);
-  return kdata->size;
+  
+  /*##########################*/
+  kunmap(kdata->addr); // Libère la mémoire d'une page
+  put_page(kdata->addr);// Libère la copie d'un map d'un espace user en espace kernel
+  return kdata->size; // Renvoie la taille de kdata (= 0 ?)
 }
 
 
@@ -119,21 +124,21 @@ static long dma_controller_ioctl(struct file *f, unsigned int cmd, unsigned long
 
   switch(cmd){
 
-    case DMA_WRITE :
-      ret = simple_kernel_mmap(f, )//struct file *f,struct vm_area_struct *vma
-      if(ret < 0){
-        dev_err(&mdev->pdev->dev, "Unable to copy value to user\n");
-        return -EIO;
-      }
-
-    case DMA_READ :
-      //Char udata représente les données à lire
-      ret = simple_user_read(f, char __user *udata, size_t size, loff_t *off); //*udata =  , size = sizeof(data), *off =
-      if(ret < 0){
-        dev_err(&mdev->pdev->dev, "Unable to copy value to user\n");
-        return -EIO;
-      }
-      break;
+    // case DMA_WRITE :
+    //   ret = simple_kernel_mmap(f, )//struct file *f,struct vm_area_struct *vma
+    //   if(ret < 0){
+    //     dev_err(&mdev->pdev->dev, "Unable to copy value to user\n");
+    //     return -EIO;
+    //   }
+    //
+    // case DMA_READ :
+    //   //Char udata représente les données à lire
+    //   ret = simple_user_read(f, char __user *udata, size_t size, loff_t *off); //*udata =  , size = sizeof(data), *off =
+    //   if(ret < 0){
+    //     dev_err(&mdev->pdev->dev, "Unable to copy value to user\n");
+    //     return -EIO;
+    //   }
+    //   break;
     default:
       return -EINVAL;
   }
