@@ -106,7 +106,7 @@ static ssize_t simple_user_read(struct file *f, char __user *udata, size_t size,
   /*###########################*/
 
   //do something with kdata
-  
+
   /*##########################*/
   kunmap(kdata->addr); // Libère la mémoire d'une page
   put_page(kdata->addr);// Libère la copie d'un map d'un espace user en espace kernel
@@ -195,4 +195,4 @@ static void _exit dma_exit(void){
 //Chargement module
 module_init(dma_init);
 //Décharchargement module
-module_exit(dma_exit)
+module_exit(dma_exit);
