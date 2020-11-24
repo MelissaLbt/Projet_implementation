@@ -139,8 +139,8 @@ static long dma_controller_ioctl(struct file *f, unsigned int cmd, unsigned long
     //     return -EIO;
     //   }
     //   break;
-    default:
-      return -EINVAL;
+    // default:
+    //   return -EINVAL;
   }
   return 0;
 }
@@ -163,7 +163,14 @@ static int dma_controller_probe(struct platform_device *pdev){
 
 // fonction appelée pour chaque périphérique compatible lors du déchargement du module
 static int dma_controller_remove(struct platform_device *pdev){
-
+  // A Vérifier
+  struct dma_controller *mdev;
+  mdev = platform_get_drvdata(pdev);
+  cdev_del(&mdev->cdev);
+  device_destroy(class, mdev->dt);
+  unregister_chrdev_region(mdev->dt, 1);
+  kfree(mdev);
+  return 0;
 }
 
 // définition de la structure d'id (à partir du device-tree) pour le platform-driver
