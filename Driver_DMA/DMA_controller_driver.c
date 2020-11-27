@@ -158,7 +158,30 @@ static const struct file_operations dma_controller_fops =
 // définitions des fonctions pour le "platform_driver"
 // fonction appelée pour chaque périphérique compatible au chargement du module
 static int dma_controller_probe(struct platform_device *pdev){
+  struct dma_controller *mdev; // crée la structure de device
+  struct cdev chardev; // crée les chardev
+  struct device *dev;
+  struct descripteur descr; //prépare les descripteurs
+  struct file *f;
+  struct vm_area_struct *vma;
 
+  mdev = kzalloc(sizeof(struct dma_controller), GFP_KERNEL);
+  if(!mdev)
+  {
+    dev_err(&mdev->pdev->dev, "Unable to allocate dma_controller structure\n");
+    return -ENOMEM;
+  }
+  mdev->pdev = pdev;
+  platform_set_drvdata(pdev, mdev);
+  res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+  *f=res;
+  int map= simple_kernel_mmap(*f,mdev->registers);
+  if(map)
+  {
+    ret = -ENOMEM;
+    dev_err(&mdev->pdev->dev, "Unable to remap resource\n");
+    goto mdev_free;
+  }
 }
 
 // fonction appelée pour chaque périphérique compatible lors du déchargement du module
