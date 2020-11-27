@@ -40,6 +40,7 @@ struct dma_controller{
   struct cdev             cdev;      // device de type caractère
   dev_t                   dt;        // région du device de type caratère
   void __iomem           *registers; // mémoire physique du dma_controller remappée en espace virtuel kernel
+  int irq;
 }
 
 // définition des fonctions pour la structure "file_operations"
@@ -156,38 +157,30 @@ static const struct file_operations dma_controller_fops =
 // définitions des fonctions pour le "platform_driver"
 // fonction appelée pour chaque périphérique compatible au chargement du module
 static int dma_controller_probe(struct platform_device *pdev){
-  
   int ret;
   struct resource *res;
-  struct dma_controller *mdev; // crée la structure de device
-  struct cdev chardev; // crée les chardev
+  struct dma_controller *mdev;
   struct device *dev;
-<<<<<<< HEAD
   static int instance_num = 0;
-=======
-  struct descripteur descr; //prépare les descripteurs
-  struct file *f;
-  struct vm_area_struct *vma;
->>>>>>> 5063e01a5604e525a119bdbe0dd993167cc66473
-
+  // allocation de la structure représentant le device
   mdev = kzalloc(sizeof(struct dma_controller), GFP_KERNEL);
-  if(!mdev)
+	if(!mdev)
   {
     dev_err(&mdev->pdev->dev, "Unable to allocate dma_controller structure\n");
     return -ENOMEM;
   }
   mdev->pdev = pdev;
   platform_set_drvdata(pdev, mdev);
-  res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-  *f=res;
-  int map= simple_kernel_mmap(*f,mdev->registers);
-  if(map)
+  // remappage de l'espace des registres
+  res = platform_get_resource(pdev, IORESOURCE_MEM, 0); // on récupère la première ressource (et la seule dans ce cas)
+  mdev->registers = devm_ioremap_resource(&pdev->dev, res); // on la remappe en espace virtuel kernel (le prefixe devm fait que le démappage sera fait automatiquement à la destruction du struct device associé
+                                                            // , ici il s'agit de pdev->dev qui est alloué et désalloué automatiquement par le platform_driver)
+  if(mdev->registers)
   {
     ret = -ENOMEM;
     dev_err(&mdev->pdev->dev, "Unable to remap resource\n");
     goto mdev_free;
   }
-<<<<<<< HEAD
   // allocation d'une region de device de type caractère
   ret = alloc_chrdev_region(&mdev->dt, 0, 1, DRIVER_NAME);
   if(ret < 0)
@@ -213,12 +206,11 @@ static int dma_controller_probe(struct platform_device *pdev){
     dev_err(&mdev->pdev->dev, "Unable to add char device\n");
     goto device_free;
   }
-  return 0; // le driver a été chargé pour ce périphérique, on retourne 0
-  // gérer les interruptions
-
   mdev->irq = platform_get_irq(pdev, 0);
 	if (mdev->irq < 0)
 		return mdev->irq;
+
+  return 0; // le driver a été chargé pour ce périphérique, on retourne 0  
 
   device_free:
     device_destroy(class, mdev->dt);
@@ -227,8 +219,7 @@ static int dma_controller_probe(struct platform_device *pdev){
   mdev_free:
     kfree(mdev);
     return ret;
-=======
->>>>>>> 5063e01a5604e525a119bdbe0dd993167cc66473
+
 }
 
 // fonction appelée pour chaque périphérique compatible lors du déchargement du module
