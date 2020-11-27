@@ -159,10 +159,13 @@ static const struct file_operations dma_controller_fops =
 // définitions des fonctions pour le "platform_driver"
 // fonction appelée pour chaque périphérique compatible au chargement du module
 static int dma_controller_probe(struct platform_device *pdev){
+  
+  int ret;
+  struct resource *res;
   struct dma_controller *mdev; // crée la structure de device
   struct device *dev;
-  //struct descripteur descr; //prépare les descripteurs
-  //struct file *f;
+  static int instance_num = 0;
+
   mdev = kzalloc(sizeof(struct dma_controller), GFP_KERNEL);
 	if(!mdev)
   {
@@ -212,7 +215,6 @@ static int dma_controller_probe(struct platform_device *pdev){
   mdev->irq = platform_get_irq(pdev, 0);
 	if (mdev->irq < 0)
 		return mdev->irq;
-
 
   device_free:
     device_destroy(class, mdev->dt);
