@@ -26,15 +26,13 @@ MODULE_LICENSE("GPL");
 // Définition des commandes IOCTL
 #DEFINE DRIVER_NAME "DMA-controller-driver"
 #DEFINE MODULE_MAJOR 100
-// ICI on utilise la macro _IOW car le kernel doit écrire vers l'utilisateur
-#DEFINE DMA_WRITE _IOW(MODULE_MAJOR , 0, int)
-// ICI on utilise la macro _IOR car l'utilisateur doit écrire vers le kernel
-#DEFINE DMA_READ _IOR(MODULE_MAJOR , 1, int)
+#DEFINE DMA_START _IO(MODULE_MAJOR, 0)
+#DEFINE DMA_WAIT  _IO(MODULE_MAJOR, 1)
+#DEFINE DMA_MMAP _IO(MODULE_MAJOR, 2)
+#DEFINE DMA_STOP _IO(MODULE_MAJOR, 3)
 
 // class de chardev
 static struct class *class = NULL;
-
-
 
 // structure représentant le device
 struct dma_controller{
@@ -42,7 +40,6 @@ struct dma_controller{
   struct cdev             cdev;      // device de type caractère
   dev_t                   dt;        // région du device de type caratère
   void __iomem           *registers; // mémoire physique du dma_controller remappée en espace virtuel kernel
-  int irq;
 }
 
 // définition des fonctions pour la structure "file_operations"
@@ -115,7 +112,7 @@ static ssize_t simple_user_read(struct file *f, char __user *udata, size_t size,
 }
 
 
-static long dma_controller_ioctl(struct file *f, unsigned int cmd, unsigned long arg){
+static long dma_controller_ioctl(struct file *f, unsigned int cmd, unsigned long arg){ //Page 14-15 de la doc
  //Gère le comportement du dma_controller
  struct dma_controller *mdev;
  int reg, regr, ret;
@@ -124,24 +121,24 @@ static long dma_controller_ioctl(struct file *f, unsigned int cmd, unsigned long
  userptr = (void*)arg;
 
   switch(cmd){
-
-    // case DMA_WRITE :
-    //   ret = simple_kernel_mmap(f, )//struct file *f,struct vm_area_struct *vma
-    //   if(ret < 0){
-    //     dev_err(&mdev->pdev->dev, "Unable to copy value to user\n");
-    //     return -EIO;
-    //   }
-    //
-    // case DMA_READ :
-    //   //Char udata représente les données à lire
-    //   ret = simple_user_read(f, char __user *udata, size_t size, loff_t *off); //*udata =  , size = sizeof(data), *off =
-    //   if(ret < 0){
-    //     dev_err(&mdev->pdev->dev, "Unable to copy value to user\n");
-    //     return -EIO;
-    //   }
-    //   break;
-    // default:
-    //   return -EINVAL;
+    case DMA_START:
+      iowrite32(0b1, mdev->registers);
+      break;
+    case DMA_WAIT:
+      iowrite32(0x1001, mdev->registers);
+      break;
+    case DMA_MMAP:
+      ret = simple_kernel_mmap(f, &(mdev->registers));
+      if(ret < 0){
+        dev_err(&mdev->pdev->dev, "Impossible de mapper la mémoire\n");
+        return -EIO;
+      }
+      break;
+    case DMA_STOP:
+      iowrite32(0b0, mdev->registers);
+      break;
+    default:
+      return -EINVAL;
   }
   return 0;
 }
@@ -163,27 +160,34 @@ static int dma_controller_probe(struct platform_device *pdev){
   int ret;
   struct resource *res;
   struct dma_controller *mdev; // crée la structure de device
+  struct cdev chardev; // crée les chardev
   struct device *dev;
+<<<<<<< HEAD
   static int instance_num = 0;
+=======
+  struct descripteur descr; //prépare les descripteurs
+  struct file *f;
+  struct vm_area_struct *vma;
+>>>>>>> 5063e01a5604e525a119bdbe0dd993167cc66473
 
   mdev = kzalloc(sizeof(struct dma_controller), GFP_KERNEL);
-	if(!mdev)
+  if(!mdev)
   {
     dev_err(&mdev->pdev->dev, "Unable to allocate dma_controller structure\n");
     return -ENOMEM;
   }
   mdev->pdev = pdev;
   platform_set_drvdata(pdev, mdev);
-  // remappage de l'espace des registres
-  res = platform_get_resource(pdev, IORESOURCE_MEM, 0); // on récupère la première ressource (et la seule dans ce cas)
-  mdev->registers = devm_ioremap_resource(&pdev->dev, res); // on la remappe en espace virtuel kernel (le prefixe devm fait que le démappage sera fait automatiquement à la destruction du struct device associé
-                                                            // , ici il s'agit de pdev->dev qui est alloué et désalloué automatiquement par le platform_driver)
-  if(mdev->registers)
+  res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+  *f=res;
+  int map= simple_kernel_mmap(*f,mdev->registers);
+  if(map)
   {
     ret = -ENOMEM;
     dev_err(&mdev->pdev->dev, "Unable to remap resource\n");
     goto mdev_free;
   }
+<<<<<<< HEAD
   // allocation d'une region de device de type caractère
   ret = alloc_chrdev_region(&mdev->dt, 0, 1, DRIVER_NAME);
   if(ret < 0)
@@ -223,6 +227,8 @@ static int dma_controller_probe(struct platform_device *pdev){
   mdev_free:
     kfree(mdev);
     return ret;
+=======
+>>>>>>> 5063e01a5604e525a119bdbe0dd993167cc66473
 }
 
 // fonction appelée pour chaque périphérique compatible lors du déchargement du module
