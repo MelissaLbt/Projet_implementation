@@ -42,6 +42,7 @@ struct dma_controller{
   struct cdev             cdev;      // device de type caractère
   dev_t                   dt;        // région du device de type caratère
   void __iomem           *registers; // mémoire physique du dma_controller remappée en espace virtuel kernel
+  int irq;
 }
 
 // définition des fonctions pour la structure "file_operations"
@@ -206,6 +207,13 @@ static int dma_controller_probe(struct platform_device *pdev){
     goto device_free;
   }
   return 0; // le driver a été chargé pour ce périphérique, on retourne 0
+  // gérer les interruptions
+
+  mdev->irq = platform_get_irq(pdev, 0);
+	if (mdev->irq < 0)
+		return mdev->irq;
+
+
   device_free:
     device_destroy(class, mdev->dt);
   region_free:
