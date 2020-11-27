@@ -28,7 +28,7 @@ MODULE_LICENSE("GPL");
 #DEFINE MODULE_MAJOR 100
 #DEFINE DMA_START _IO(MODULE_MAJOR, 0)
 #DEFINE DMA_WAIT  _IO(MODULE_MAJOR, 1)
-#DEFINE DMA_MMAP _IOR(MODULE_MAJOR, 2, #Dim)
+#DEFINE DMA_MMAP _IO(MODULE_MAJOR, 2)
 #DEFINE DMA_STOP _IO(MODULE_MAJOR, 3)
 
 // class de chardev
@@ -128,8 +128,7 @@ static long dma_controller_ioctl(struct file *f, unsigned int cmd, unsigned long
       iowrite32(0x1001, mdev->registers);
       break;
     case DMA_MMAP:
-      reg = ioread32(mdev->registers);
-      ret = simple_kernel_mmap(f, &reg);
+      ret = simple_kernel_mmap(f, &(mdev->registers));
       if(ret < 0){
         dev_err(&mdev->pdev->dev, "Impossible de mapper la mémoire\n");
         return -EIO;
