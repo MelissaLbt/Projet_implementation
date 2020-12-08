@@ -144,9 +144,6 @@ static long dma_controller_ioctl(struct file *f, unsigned int cmd, unsigned long
   return 0;
 }
 
-
-
-
 // définition de la structure "file_operations"
 static const struct file_operations dma_controller_fops =
 {.open = dma_controller_open
@@ -162,6 +159,7 @@ static int dma_controller_probe(struct platform_device *pdev){
   struct dma_controller *mdev;
   struct device *dev;
   static int instance_num = 0;
+
   // allocation de la structure représentant le device
   mdev = kzalloc(sizeof(struct dma_controller), GFP_KERNEL);
 	if(!mdev)
@@ -171,6 +169,7 @@ static int dma_controller_probe(struct platform_device *pdev){
   }
   mdev->pdev = pdev;
   platform_set_drvdata(pdev, mdev);
+
   // remappage de l'espace des registres
   res = platform_get_resource(pdev, IORESOURCE_MEM, 0); // on récupère la première ressource (et la seule dans ce cas)
   mdev->registers = devm_ioremap_resource(&pdev->dev, res); // on la remappe en espace virtuel kernel (le prefixe devm fait que le démappage sera fait automatiquement à la destruction du struct device associé
@@ -210,7 +209,7 @@ static int dma_controller_probe(struct platform_device *pdev){
 	if (mdev->irq < 0)
 		return mdev->irq;
 
-  return 0; // le driver a été chargé pour ce périphérique, on retourne 0  
+  return 0; // le driver a été chargé pour ce périphérique, on retourne 0
 
   device_free:
     device_destroy(class, mdev->dt);
