@@ -30,7 +30,7 @@ void read_dma_simple(struct axi_dma *dma, struct axi_dma_buffer *buffer){
 
 void write_dma_simple(struct axi_dma *dma, struct axi_dma_buffer *buffer){
   iowrite32(dma->register_space + MM2S_DMACR_OFFSET, 0x1001);
-  iowrite32(dma->register_space + MMS2_LENGTH_OFFSET, buffer->size);
+  iowrite32(dma->register_space + MM2S_LENGTH_OFFSET, buffer->size);
   int reg = ioread32(buffer->data);
   iowrite32(dma->register_space + MM2S_DA_OFFSET, reg);
   iowrite32(dma->register_space + MM2S_DMASR_OFFSET, 0x1000);
