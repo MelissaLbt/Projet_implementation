@@ -1,13 +1,13 @@
 #include <stdio.h>
 
-#DEFINE MM2S_DMACR_OFFSET 0x00
-#DEFINE MM2S_DMASR_OFFSET 0x04
-#DEFINE MM2S_DA_OFFSET 0x18
-#DEFINE MM2S_LENGTH_OFFSET 0x28
-#DEFINE S2MM_DMACR_OFFSET 0x30
-#DEFINE S2MM_DA_OFFSET 0x48
-#DEFINE S2MM_LENGTH_OFFSET 0x58
-#DEFINE S2MM_DMASR_OFFSET 0x34
+#define MM2S_DMACR_OFFSET 0x00
+#define MM2S_DMASR_OFFSET 0x04
+#define MM2S_DA_OFFSET 0x18
+#define MM2S_LENGTH_OFFSET 0x28
+#define S2MM_DMACR_OFFSET 0x30
+#define S2MM_DA_OFFSET 0x48
+#define S2MM_LENGTH_OFFSET 0x58
+#define S2MM_DMASR_OFFSET 0x34
 
 struct axi_dma {
   volatile char* register_space;
@@ -30,7 +30,7 @@ void read_dma_simple(struct axi_dma *dma, struct axi_dma_buffer *buffer){
 
 void write_dma_simple(struct axi_dma *dma, struct axi_dma_buffer *buffer){
   iowrite32(dma->register_space + MM2S_DMACR_OFFSET, 0x1001);
-  iowrite32(dma->register_space + MMS2_LENGTH_OFFSET, buffer->size);
+  iowrite32(dma->register_space + MM2S_LENGTH_OFFSET, buffer->size);
   int reg = ioread32(buffer->data);
   iowrite32(dma->register_space + MM2S_DA_OFFSET, reg);
   iowrite32(dma->register_space + MM2S_DMASR_OFFSET, 0x1000);
