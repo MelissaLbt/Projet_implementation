@@ -61,7 +61,7 @@ void dma_sg_init(struct axi_dma_sg *sg, struct axi_dma_buffer *buffer, size_t pk
     sg[i].nextdesc =  &s[i + 1];
     sg[i].buffer_address = &data;
     i++;
-    data = data + OFFSET_64;
+    data += OFFSET_64;
     buffer_length -= pkt_size;
   }
 }
@@ -73,17 +73,21 @@ void dma_sg_init_sparse(struct axi_dma_sg *sg, struct axi_dma_buffer **buffers, 
 }
 
 void read_dma_sg(struct axi_dma *dma, struct axi_dma_sg *sg){
-  int i = 0, length = sg.length; // Nombre de descripteurs
+  int i = 0, length = sizeof(sg) / sizeof(sg[0]); // Nombre de descripteurs
   iowrite32(dma->register_space + S2MM_DMACR_OFFSET, (length << 16) | 0x1001); //IRQ Threshold + IOC_IRQ + RS
   iowrite32(dma->register_space + S2MM_TAILDESC_OFFSET, sg[length-1].nextdesc); // Adresse du dernier descripteur
   while(i != length ){
-    int reg = ioread32(sg[0]->buffer_address);
-    iowrite32(, reg);
+    dma->register_space + S2MM_CURDESC_OFFSET = &sg[i];
+    i++;
   }
 }
 
 void write_dma_sg(struct axi_dma *dma, struct axi_dma_sg *sg){
-  int length = sg.length; // Nombre de descripteurs
+  int i = 0, length = sizeof(sg) / sizeof(sg[0]); // Nombre de descripteurs
   iowrite32(dma->register_space + MM2S_DMACR_OFFSET, (length << 16) | 0x1001); //IRQ Threshold + IOC_IRQ + RS
   iowrite32(dma->register_space + MM2S_TAILDESC_OFFSET, sg[length-1].nextdesc); // Adresse du dernier descripteur
+  while(i != length ){
+     sg[i] = dma->register_space + S2MM_CURDESC_OFFSET;
+    i++;
+  }
 }
