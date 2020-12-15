@@ -1,13 +1,4 @@
-/*Méthodes :
-- open associée à l'ouverture du périphérique. Cette méthode permet le plus souvent la détection et l'initialisation du hardware lorsque cela est nécessaire
-- read associée à la lecture. Cette méthode permet de lire les données sur le périphérique (dans l'espace noyau) puis de faire passer ces données dans l'espace utilisateur appelant
-- write associée à l'écriture. Cette méthode permet de passer les données de l'espace utilisateur à l'espace noyau puis d'envoyer les données au périphérique
-- close associée à la fermeture d'accès. Cette méthode pourra exécuter des actions matérielles nécessaires à la fermeture du périphérique.
-- ioctl, cette entrée permettra d'envoyer des séquences de paramétrage au périphérique en utilisant l'appel système ioctl depuis un programme utilisateur
-- select, l'appel système select permet à un utilisateur de se mettre en attente d'évènements (read/write/signal) sur un ensemble de descripteurs de fichiers
-*/
-
-MODULE_AUTHOR("Mélissa LEBRETON, Meriem LAGHA");
+MODULE_AUTHOR("Mélissa LEBRETON, Meriem LAGHA, Diego MORENO, Lisa HENNEBELLE");
 MODULE_DESCRIPTION("DMA controller driver");
 MODULE_LICENSE("GPL");
 
@@ -22,14 +13,44 @@ MODULE_LICENSE("GPL");
 #include <linux/mm.h>
 #include <linux/highmem.h>
 
+/* ##################################################  MACROS ################################################## */
 
 // Définition des commandes IOCTL
-#DEFINE DRIVER_NAME "DMA-controller-driver"
-#DEFINE MODULE_MAJOR 100
-#DEFINE DMA_START _IO(MODULE_MAJOR, 0)
-#DEFINE DMA_WAIT  _IO(MODULE_MAJOR, 1)
-#DEFINE DMA_MMAP _IO(MODULE_MAJOR, 2)
-#DEFINE DMA_STOP _IO(MODULE_MAJOR, 3)
+#define DRIVER_NAME   "DMA-controller-driver"
+#define MODULE_MAJOR  100
+#define DMA_START     _IO(MODULE_MAJOR, 0)
+#define DMA_WAIT      _IO(MODULE_MAJOR, 1)
+#define DMA_MMAP      _IO(MODULE_MAJOR, 2)
+#define DMA_STOP      _IO(MODULE_MAJOR, 3)
+
+#define IOC_BIT 12 // bit de l'interruption IOC des registres de contrôle
+
+// Définition pour SG
+#define MM2S_CR 0x00 // offset du registre MM2S_DMACR
+#define MM2S_SR 0x04 // offset du registre MM2S_DMACR
+#define MM2S_CD 0x08 // offset du registre MM2S_CURDESC
+#define MM2S_TD 0x10 // offset du registre MM2S_TAILDESC
+
+#define S2MM_CR 0x30 // offset du registre S2MM_DMACR
+#define S2MM_SR 0x34 // offset du registre S2MM_DMASR
+#define S2MM_CD 0x38 // offset du registre S2MM_CURDESC
+#define S2MM_TD 0x40 // offset du registre S2MM_TAILDESC
+
+#define SIZE_MASK ((1 << 26) - 1) // masque pour la taille d'un paquet (champ control de la structure sg)
+#define EOF_BIT 26 // bit EOF (end of frame) (champ control de la structure sg)
+#define SOF_BIT 27 // bit SOF (start of frame) (champ control de la structure sg)
+
+/* ##################################################  TYPE DEFINI ################################################## */
+typedef unsigned int u32;
+typedef u32 size_t;
+
+/* ##################################################  EXTERN ################################################## */
+
+extern u32 ioread32(volatile void *addr);
+extern void iowrite32(u32 value, volatile void *addr); // j'ai inversé l'ordre des arguments pour avoir un prototype similaire à linux
+
+/* ##################################################  STRUCTURE ################################################## */
+
 
 // class de chardev
 static struct class *class = NULL;
@@ -41,30 +62,47 @@ struct dma_controller{
   dev_t                   dt;        // région du device de type caratère
   void __iomem           *registers; // mémoire physique du dma_controller remappée en espace virtuel kernel
   int irq;
-}
+};
 
-// définition des fonctions pour la structure "file_operations"
-static int dma_controller_open(struct inode *i, struct file *f){ // --> Chercher utilité struct inode
-  struct dma_controller *mdev = container_of(i->i_cdev, struct dma_controller, cdev); // on récupère l'adresse de structure mdev grâce à la macro container_of
-  f->private_data = mdev; // on écrit cette adresse dans le membre private_data
-  return 0;
-}
-
-static int dma_controller_release(struct inode *i, struct file *f){
-  f->private_data = NULL; // le fichier est fermé: on efface le membre private_data
-  return 0;
-}
-
-struct kdata
-{
+struct kdata {
   struct device dev;
   void* addr;
   size_t size;
 };
 
-// Remapper la mémoire pour un driver
-static int simple_kernel_mmap(struct file *f,struct vm_area_struct *vma)
+// Structure de l'AXI DMA
+struct axi_dma
 {
+  volatile char *register_space; // adresse de base des registres
+  volatile int   rx_done; // booléen pour savor si une lecture est terminée
+  volatile int   tx_done; // booléen pour savoir si une écriture est terminée
+};
+
+// Structure du buffer
+struct axi_dma_buffer
+{
+  volatile void *data; // pointeur vers l'adresse de base du buffer
+  size_t size; // taille du buffer
+};
+
+//Structure des descripteurs SG
+struct axi_dma_sg
+{
+  u32 nextdesc; // adresse [31:0] du descripteur suivant
+  u32 nextdesc_msb; // adresse [63:32] du descripteur
+  u32 buffer_address; // adresse [31:0] de base du paquet
+  u32 buffer_address_msb; // adresse [63:32] de base du paquet
+  u32 reserved[2];
+  u32 control; // taille [25:0] + EOF [26] + SOF [27]
+  u32 status; // champ de status
+  u32 app[5];
+  u32 padding[3];
+} __attribute__((aligned(64)));
+
+/* ##################################################  FONCTIONS DE TRAITEMENT ################################################## */
+
+// Remapper la mémoire pour un driver
+static int simple_kernel_mmap(struct file *f,struct vm_area_struct *vma){
   int ret;
   struct kdata *kdata;
   dma_addr_t phys;
@@ -84,7 +122,6 @@ static int simple_kernel_mmap(struct file *f,struct vm_area_struct *vma)
     }
     return 0;
 }
-
 
 static ssize_t simple_user_read(struct file *f, char __user *udata, size_t size, loff_t *off){
   ssize_t ret;
@@ -112,9 +149,84 @@ static ssize_t simple_user_read(struct file *f, char __user *udata, size_t size,
   return kdata->size; // Renvoie la taille de kdata (= 0 ?)
 }
 
+//Initialisation des descripteurs à partir d'un buffer
+void dma_sg_init( struct axi_dma_sg *sg, struct axi_dma_buffer *buffer, size_t pkt_size)
+{
+  u32 i, j, size;
+  size = buffer->size; // on sauvegarde la taille totale du buffer
+  for(j = 0, i = 0 ; i < buffer->size ; i += pkt_size, j++) // on boucle sur les données du buffer
+  {
+    sg[j].buffer_address = (u32) buffer->data + i; // on écrit l'adresse de début de paquet
+    sg[j].control = (pkt_size < size ? pkt_size : size) & SIZE_MASK; // on écrit la taille du paquet
+    sg[j].nextdesc = (u32)&sg[j+1]; // on écrit l'adresse du descripteur suivant
+    size -= pkt_size; // on décrémente la taille non assignée à un descripteur
+  }
+  sg[j-1].control |= (1 << EOF_BIT); // on écrit '1' sur le EOF bit du champ control du dernier descripteur
+  sg[0].control |= (1 << SOF_BIT); // on écrit '1' sur le SOF bit du champ control du premier descripteur
+}
 
+//Initialisation des descripteurs à partir de plusieurs buffers
+void dma_sg_init_sparse( struct axi_dma_sg *sg, struct axi_dma_buffer **buffers
+                       , size_t num_buffers, size_t pkt_size)
+{
+  u32 i, j,k, size;
+  j = 0;
+  for(k=0; k < num_buffers ; k++) // on boucle sur les buffers
+  {
+    size = buffers[k]->size; // on sauvegarde la taille totale du buffer k
+    for(i = 0 ; i < buffers[k]->size ; i += pkt_size, j++) // on boucle sur le buffer k
+    {
+      sg[j].buffer_address = (u32) buffers[k]->data + i; // on écrit l'adresse de début de paquet
+      sg[j].control = (pkt_size < size ? pkt_size : size) & SIZE_MASK; // on écrit la taille du paquet
+      sg[j].nextdesc = (u32)&sg[j+1]; // on écrit l'adresse du descripteur suivant
+      size -= pkt_size; // on décrémente la taille non assignée à un descripteur
+    }
+  }
+  sg[j-1].control |= (1 << EOF_BIT); // on écrit '1' sur le EOF bit du champ control du dernier descripteur
+  sg[0].control |= (1 << SOF_BIT); // on écrit '1' sur le SOF bit du champ control du premier descripteur
+}
+
+//Ecrire les données pointées par la mémoire scatter-gather sur un stream
+void write_dma_sg(struct axi_dma *dma, struct axi_dma_sg *sg)
+{
+  int i;
+  dma->rx_done = 0; // on remet le rx_done à 0 pour pouvoir détecter une nouvelle interruption
+  iowrite32(1 | (1 << IOC_BIT), dma->register_space + MM2S_CR); // on active le DMA et l'interruption IOC
+  iowrite32((u32)sg, dma->register_space + MM2S_CD); // on écrit l'adresse du premier descripteur dans CURDESC
+  for(i = 0 ; (sg[i].control & (1 << EOF_BIT)) == 0 ; i++); // on cherche le dernier descripteur
+  iowrite32((u32)&sg[i-1], dma->register_space + MM2S_TD); // on écrit l'adresse du dernier descripteur dans TAILDESC
+}
+
+//Lire les données d’ un stream et les stocker dans les adresses pointées dans la mémoire scatter-gather
+void read_dma_sg(struct axi_dma *dma, struct axi_dma_sg *sg)
+{
+  int i;
+  dma->tx_done = 0; // on remet le tx_done à 0 pour pouvoir détecter une nouvelle interruption
+  iowrite32(1 | (1 << IOC_BIT), dma->register_space + S2MM_CR); // on active le DMA et l'interruption IOC
+  iowrite32((u32)sg, dma->register_space + S2MM_CD); // on écrit l'adresse du premier descripteur dans CURDESC
+  for(i = 0 ; (sg[i].control & (1 << EOF_BIT)) == 0 ; i++); // on cherche le dernier descripteur
+  iowrite32((u32)&sg[i], dma->register_space + S2MM_TD); // on écrit l'adresse du dernier descripteur dans TAILDESC
+}
+
+
+
+/* ##################################################  FONCTIONS DRIVER ################################################## */
+
+// définition des fonctions pour la structure "file_operations"
+static int dma_controller_open(struct inode *i, struct file *f){ // --> Chercher utilité struct inode
+  struct dma_controller *mdev = container_of(i->i_cdev, struct dma_controller, cdev); // on récupère l'adresse de structure mdev grâce à la macro container_of
+  f->private_data = mdev; // on écrit cette adresse dans le membre private_data
+  return 0;
+}
+
+//Libére la structure du DMA
+static int dma_controller_release(struct inode *i, struct file *f){
+  f->private_data = NULL; // le fichier est fermé: on efface le membre private_data
+  return 0;
+}
+
+//Gère le comportement du dma_controller
 static long dma_controller_ioctl(struct file *f, unsigned int cmd, unsigned long arg){ //Page 14-15 de la doc
- //Gère le comportement du dma_controller
  struct dma_controller *mdev;
  int reg, regr, ret;
  void *userptr;
@@ -122,11 +234,12 @@ static long dma_controller_ioctl(struct file *f, unsigned int cmd, unsigned long
  userptr = (void*)arg;
 
   switch(cmd){
-    case DMA_START:
-      iowrite32(0b1, mdev->registers);
+/*    ##### A REVOIR  #####
+      case DMA_START:
+      //iowrite32(0b1, mdev->registers);
       break;
     case DMA_WAIT:
-      iowrite32(0x1001, mdev->registers);
+      //iowrite32(0x1001, mdev->registers);
       break;
     case DMA_MMAP:
       ret = simple_kernel_mmap(f, &(mdev->registers));
@@ -136,8 +249,8 @@ static long dma_controller_ioctl(struct file *f, unsigned int cmd, unsigned long
       }
       break;
     case DMA_STOP:
-      iowrite32(0b0, mdev->registers);
       break;
+*/
     default:
       return -EINVAL;
   }
@@ -151,8 +264,7 @@ static const struct file_operations dma_controller_fops =
 , .unlocked_ioctl = dma_controller_ioctl
 };
 
-// définitions des fonctions pour le "platform_driver"
-// fonction appelée pour chaque périphérique compatible au chargement du module
+// définitions des fonctions pour le "platform_driver", fonction appelée pour chaque périphérique compatible au chargement du module
 static int dma_controller_probe(struct platform_device *pdev){
   int ret;
   struct resource *res;
@@ -246,6 +358,8 @@ static struct platform_driver dma_controller_pdrv =
 , .remove = dma_controller_remove
 };
 
+
+/* ##################################################  GESTION DMA ################################################## */
 
 //Initialisation
 static int _init dma_init(void){
