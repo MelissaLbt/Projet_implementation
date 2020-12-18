@@ -149,6 +149,7 @@ static ssize_t simple_user_read(struct file *f, char __user *udata, size_t size,
   return kdata->size; // Renvoie la taille de kdata (= 0 ?)
 }
 
+/*
 //Initialisation des descripteurs à partir d'un buffer
 void dma_sg_init( struct axi_dma_sg *sg, struct axi_dma_buffer *buffer, size_t pkt_size)
 {
@@ -207,8 +208,56 @@ void read_dma_sg(struct axi_dma *dma, struct axi_dma_sg *sg)
   for(i = 0 ; (sg[i].control & (1 << EOF_BIT)) == 0 ; i++); // on cherche le dernier descripteur
   iowrite32((u32)&sg[i], dma->register_space + S2MM_TD); // on écrit l'adresse du dernier descripteur dans TAILDESC
 }
+*/
 
+void write_dma_simple( struct axi_dma *dma, struct axi_dma_buffer *buffer)
+{
+  dma->tx_done = 0; // on remet le tx_done à 0 pour pouvoir détecter une nouvelle interruption
+  iowrite32(1 | (1 << IOC_BIT), dma->register_space + MM2S_CR); // on active le DMA et l'interruption IOC
+  iowrite32((u32)buffer->data, dma->register_space + MM2S_SA); // on écrit l'adresse du buffer dans SA
+  iowrite32(buffer->size, dma->register_space + MM2S_LENGTH); // on écrit la taille du buffer dans LENGTH
+}
 
+void read_dma_simple( struct axi_dma *dma, struct axi_dma_buffer *buffer)
+{
+  dma->rx_done = 0; // on remet le tx_done à 0 pour pouvoir détecter une nouvelle interruption
+  iowrite32(1 | (1 << IOC_BIT), dma->register_space + S2MM_CR); // on active le DMA et l'interruption IOC
+  iowrite32((u32)buffer->data, dma->register_space + S2MM_DA); // on écrit l'adresse du buffer dans DA
+  iowrite32(buffer->size, dma->register_space + S2MM_LENGTH); // on écrit la taille du buffer dans LENGTH
+}
+
+// question 2
+void wait_tx_completion(struct axi_dma *dma)
+{
+  while(!dma->tx_done);
+}
+
+void wait_rx_completion(struct axi_dma *dma)
+{
+  while(!dma->rx_done);
+}
+
+void dma_irq_rx(struct axi_dma *dma)
+{
+  u32 status;
+  status = ioread32(dma->register_space + S2MM_SR); // on lit le registre de status
+  if(status & (1 << IOC_BIT)) // si le bit IOC est à 1 -> une transaction vient de se terminer
+  {
+    iowrite32(status | (1 << IOC_BIT), dma->register_space + S2MM_SR); // on écrit 1 sur le bit IOC du registre SR
+    dma->rx_done = 1; // on met le rx_done à 1 pour débloquer wait_rx_completion
+  }
+}
+
+void dma_irq_tx(struct axi_dma *dma)
+{
+  u32 status;
+  status = ioread32(dma->register_space + MM2S_SR); // on lit le registre de status
+  if(status & (1 << IOC_BIT)) // si le bit IOC est à 1 -> une transaction vient de se terminer
+  {
+    iowrite32(status | (1 << IOC_BIT), dma->register_space + MM2S_SR); // on écrit 1 sur le bit IOC du registre SR
+    dma->tx_done = 1; // on met le tx_done à 1 pour débloquer wait_tx_completion
+  }
+}
 
 /* ##################################################  FONCTIONS DRIVER ################################################## */
 
@@ -225,37 +274,42 @@ static int dma_controller_release(struct inode *i, struct file *f){
   return 0;
 }
 
-//Gère le comportement du dma_controller
-static long dma_controller_ioctl(struct file *f, unsigned int cmd, unsigned long arg){ //Page 14-15 de la doc
+
+/* ######################### A CORRIGER ######################### */
+static long dma_controller_ioctl_write(struct file *f, unsigned int cmd, unsigned long arg){ //Page 14-15 de la doc
+ //Gère le comportement du dma_controller
  struct dma_controller *mdev;
  int reg, regr, ret;
  void *userptr;
  mdev = f->private_data; // on récupère un pointeur vers la structure dma_controller
  userptr = (void*)arg;
+ /* Définir dma & buffer */
+ write_dma_simple( *dma, *buffer);
+ if((dma->register_space + MM2S_CR) & (1<<12) ==1 ) // verifier si on va écrire l'adresse du buffer dans SA
+ {
+   wait_tx_completion(*dma);
+ }
+ dma_irq_tx(*dma)
+ return 0;
+}
 
-  switch(cmd){
-/*    ##### A REVOIR  #####
-      case DMA_START:
-      //iowrite32(0b1, mdev->registers);
-      break;
-    case DMA_WAIT:
-      //iowrite32(0x1001, mdev->registers);
-      break;
-    case DMA_MMAP:
-      ret = simple_kernel_mmap(f, &(mdev->registers));
-      if(ret < 0){
-        dev_err(&mdev->pdev->dev, "Impossible de mapper la mémoire\n");
-        return -EIO;
-      }
-      break;
-    case DMA_STOP:
-      break;
-*/
-    default:
-      return -EINVAL;
+static long dma_controller_ioctl_read(struct file *f, unsigned int cmd, unsigned long arg){
+  struct dma_controller *mdev;
+  int reg, regr, ret;
+  void *userptr;
+  mdev = f->private_data; // on récupère un pointeur vers la structure dma_controller
+  userptr = (void*)arg;
+  /* Définir dma & buffer */
+  write_dma_simple( *dma, *buffer);
+
+  if( (dma->register_space + S2MM_CR) & (1<<12) ==1 ) // verifier si on va écrire l'adresse du buffer dans SA
+  {
+    wait_rx_completion(*dma);
   }
+  dma_irq_rx(*dma)
   return 0;
 }
+/* ############################################################### */
 
 // définition de la structure "file_operations"
 static const struct file_operations dma_controller_fops =
