@@ -44,6 +44,7 @@ static int axi_dma_coherent_init(struct axi_dma_channel *chan)
     ptr[AXI_DMA_BD_NEXTDESC >> 2] = chan->sg_handles[i];
     ptr[AXI_DMA_BD_CONTROL >> 2] = chan->buf_size;
     ptr[AXI_DMA_BD_BUFFER_ADDR >> 2] = chan->handles[i - 1];
+    ptr += AXI_DMA_BD_SIZE >> 2;
   }
   // chaînage différencié pour le dernier descripteur
   if(chan->flags & AXI_DMA_FLAG_CYCLIC)
@@ -159,6 +160,19 @@ int axi_dma_remap(struct axi_dma_channel *chan, struct vm_area_struct *vma)
 void axi_dma_stop(struct axi_dma_channel *chan)
 {
   // TODO
+  u32 status;
+  status = ioread32(chan->parent->register_space + AXI_DMA_S2MM_DMASR); // on lit le registre de status
+  if(status & (1 << AXI_DMA_IOC)) // si le bit IOC est à 1 -> une transaction vient de se terminer
+  {
+    iowrite32(status | (1 << AXI_DMA_IOC), chan->parent->register_space + AXI_DMA_S2MM_DMASR);
+    chan->parent->has_rx = 0;
+  }
+  status = ioread32(chan->parent->register_space + AXI_DMA_MM2S_DMASR); // on lit le registre de status
+  if(status & (1 << AXI_DMA_IOC)) // si le bit IOC est à 1 -> une transaction vient de se terminer
+  {
+    iowrite32(status | (1 << AXI_DMA_IOC), chan->parent->register_space + AXI_DMA_MM2S_DMASR); // on écrit 1 sur le bit IOC du registre SR
+    chan->parent->has_tx = 0;
+  }
 }
 
 u32 axi_dma_get_register_value(struct axi_dma_channel *chan, int offset)
@@ -169,6 +183,7 @@ u32 axi_dma_get_register_value(struct axi_dma_channel *chan, int offset)
   reg_space = chan->parent->register_space;
   if(chan->direction == DMA_FROM_DEVICE) reg_space += 0x30; // on décale l'adresse pour les canaux S2MM
   // TODO                                                   // pour avoir les mêmes offsets
+  value = reg_space[offset]; //Ajout
   return value;
 }
 
@@ -191,4 +206,3 @@ void axi_dma_swap_buffers(struct axi_dma_channel *chan)
   chan->vlast[AXI_DMA_BD_NEXTDESC >> 2] = chan->first; // on chaine le dernier avec le premier de l'autre buffer
   chan->vlast = vlast;
 }
-
