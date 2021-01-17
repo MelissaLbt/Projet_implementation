@@ -176,20 +176,14 @@ int axi_dma_remap(struct axi_dma_channel *chan, struct vm_area_struct *vma)
 void axi_dma_stop(struct axi_dma_channel *chan)
 {
   // TODO
-  // u32 status;
-  // status = ioread32(chan->parent->register_space + AXI_DMA_S2MM_DMASR); // on lit le registre de status
-  // if(status & (1 << AXI_DMA_IOC)) // si le bit IOC est à 1 -> une transaction vient de se terminer
-  // {
-  //   iowrite32(status | (1 << AXI_DMA_IOC), chan->parent->register_space + AXI_DMA_S2MM_DMASR);
-  //   chan->parent->has_rx = 0;
-  // }
-  // status = ioread32(chan->parent->register_space + AXI_DMA_MM2S_DMASR); // on lit le registre de status
-  // if(status & (1 << AXI_DMA_IOC)) // si le bit IOC est à 1 -> une transaction vient de se terminer
-  // {
-  //   iowrite32(status | (1 << AXI_DMA_IOC), chan->parent->register_space + AXI_DMA_MM2S_DMASR); // on écrit 1 sur le bit IOC du registre SR
-  //   chan->parent->has_tx = 0;
-  // }
-  axi_dma_buffer_release(chan);
+  if(chan->parent->has_rx == 1)
+  {
+    axi_dma_buffer_release(chan->parent->rx);
+  }
+  if(chan->parent->has_tx == 1)
+  {
+    axi_dma_buffer_release(chan->parent->tx);
+  }
 }
 
 u32 axi_dma_get_register_value(struct axi_dma_channel *chan, int offset)
