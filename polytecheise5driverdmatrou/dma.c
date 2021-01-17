@@ -132,7 +132,6 @@ void axi_dma_start(struct axi_dma_channel *chan)
   u32 sg=chan->sg_handles;
   if((chan->parent->has_tx) && AXI_DMA_IOC)
   {
-    chan->parent->rx_done = 0;
     iowrite32(1 | (1 << AXI_DMA_IOC), chan->parent->register_space + MM2S_CR); // on active le DMA et l'interruption IOC
     iowrite32((u32)sg, chan->parent->register_space + MM2S_CD); // on écrit l'adresse du premier descripteur dans CURDESC
     for(i = 0 ; (sg[i].control & (1 << EOF_BIT)) == 0 ; i++); // on cherche le dernier descripteur
@@ -141,7 +140,6 @@ void axi_dma_start(struct axi_dma_channel *chan)
   if((chan->parent->has_rx) && AXI_DMA_IOC)
   {
     u32 sg=chan->sg_handles;
-    chan->parent->tx_done = 0;
     iowrite32(1 | (1 << AXI_DMA_IOC), chan->parent->register_space + S2MM_CR); // on active le DMA et l'interruption IOC
     iowrite32((u32)sg, chan->parent->register_space + S2MM_CD); // on écrit l'adresse du premier descripteur dans CURDESC
     for(i = 0 ; (sg[i].control & (1 << EOF_BIT)) == 0 ; i++); // on cherche le dernier descripteur
