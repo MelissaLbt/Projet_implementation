@@ -7,15 +7,28 @@ static irqreturn_t irq_handler(int irq, void *data)
   struct axi_dma_dev *dev;
   chan = data;
   dev = chan->parent;
-  status = ioread32(dev->register_space + AXI_DMA_S2MM_DMASR);
-  if(status & AXI_DMA_IOC)
-    iowrite32(AXI_DMA_IOC, dev->register_space + AXI_DMA_S2MM_DMASR);
-  if(status & AXI_DMA_IER)
-  {
-    dev_err(&dev->pdev->dev, "IRQ ERROR: status: 0x%x\n", status);
-    iowrite32(AXI_DMA_IER, dev->register_space + AXI_DMA_S2MM_DMASR);
+  if(chan->direction == DMA_FROM_DEVICE){
+    status = ioread32(dev->register_space + AXI_DMA_S2MM_DMASR);
+    if(status & AXI_DMA_IOC)
+      iowrite32(AXI_DMA_IOC, dev->register_space + AXI_DMA_S2MM_DMASR);
+    if(status & AXI_DMA_IER)
+    {
+      dev_err(&dev->pdev->dev, "IRQ ERROR: status: 0x%x\n", status);
+      iowrite32(AXI_DMA_IER, dev->register_space + AXI_DMA_S2MM_DMASR);
+    }
+    complete(&chan->completion);
   }
-  complete(&chan->completion);
+  if(chan->direction == DMA_TO_DEVICE){
+    complete(&chan->completion);
+    status = ioread32(dev->register_space + AXI_DMA_MM2S_DMASR);
+    if(status & AXI_DMA_IER)
+    {
+      dev_err(&dev->pdev->dev, "IRQ ERROR: status: 0x%x\n", status);
+      iowrite32(AXI_DMA_IER, dev->register_space + AXI_DMA_MM2S_DMASR);
+    }
+    if(status & AXI_DMA_IOC)
+      iowrite32(AXI_DMA_IOC, dev->register_space + AXI_DMA_MM2S_DMASR);
+  }
   return 0;
 }
 
