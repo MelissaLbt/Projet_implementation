@@ -129,8 +129,7 @@ void axi_dma_buffer_release(struct axi_dma_channel *chan)
 void axi_dma_start(struct axi_dma_channel *chan)
 {
   // TODO
-  iowrite32(chan->sg_handles, chan->sg_mem); //initialisation
-  u32 sg=chan->sg_mem;
+  u32 sg=chan->handles[0];
   if((chan->parent->has_tx) && AXI_DMA_IOC)
   {
     chan->parent->rx_done = 0;
@@ -141,8 +140,7 @@ void axi_dma_start(struct axi_dma_channel *chan)
   }
   if((chan->parent->has_rx) && AXI_DMA_IOC)
   {
-    iowrite32(chan->sg_handles, chan->sg_mem); //initialisation
-    u32 sg=chan->sg_mem;
+    u32 sg=chan->handles[0];
     chan->parent->tx_done = 0;
     iowrite32(1 | (1 << AXI_DMA_IOC), chan->parent->register_space + S2MM_CR); // on active le DMA et l'interruption IOC
     iowrite32((u32)sg, chan->parent->register_space + S2MM_CD); // on écrit l'adresse du premier descripteur dans CURDESC
