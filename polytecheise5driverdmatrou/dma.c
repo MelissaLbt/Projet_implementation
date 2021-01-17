@@ -66,7 +66,7 @@ static int axi_dma_coherent_init(struct axi_dma_channel *chan)
     chan->vlast = ptr;
     chan->last = chan->sg_handles[chan->num_handles - 1];
   }
-  chan->first = chan->handles[0];
+  chan->first = chan->sg_handles[0];
   chan->vfirst = chan->mem;
   return 0;
 }
